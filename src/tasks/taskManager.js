@@ -1,39 +1,37 @@
-const tasks = [];
-let nextId = 1;
+const { Task } = require('../database/models');
 
-function addTask(assignedTo, taskDescription, dueDate) {
-  const task = {
-    id: nextId++,
+async function addTask(assignedTo, taskDescription, dueDate, assignedToPhone) {
+  const task = await Task.create({
     assignedTo,
+    assignedToPhone,
     taskDescription,
-    dueDate,
-    completed: false,
-    createdAt: new Date().toISOString(),
-  };
-  tasks.push(task);
+    dueDate: dueDate ? new Date(dueDate) : undefined,
+  });
   return task;
 }
 
-function getTasks() {
-  return tasks;
+async function getTasks() {
+  return await Task.find().sort({ createdAt: -1 });
 }
 
-function getPendingTasks() {
-  return tasks.filter(task => !task.completed);
+async function getPendingTasks() {
+  return await Task.find({ completed: false }).sort({ createdAt: -1 });
 }
 
-function getOverdueTasks() {
-  const now = new Date();
-  return tasks.filter(task => !task.completed && new Date(task.dueDate) < now);
+async function getOverdueTasks() {
+  return await Task.find({
+    completed: false,
+    dueDate: { $lt: new Date() },
+  }).sort({ dueDate: 1 });
 }
 
-function completeTask(taskId) {
-  const task = tasks.find(t => t.id === taskId);
-  if (task) {
-    task.completed = true;
-    return task;
-  }
-  return null;
+async function completeTask(taskId) {
+  const task = await Task.findByIdAndUpdate(
+    taskId,
+    { completed: true, completedAt: new Date() },
+    { new: true }
+  );
+  return task;
 }
 
 module.exports = { addTask, getTasks, getPendingTasks, getOverdueTasks, completeTask };
