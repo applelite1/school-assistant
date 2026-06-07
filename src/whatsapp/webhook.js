@@ -73,19 +73,30 @@ router.post('/', async (req, res) => {
             const reply = `${pending.contactName} has been saved as ${role}. Is there any follow-up task you'd like me to assign to ${pending.contactName} right away Divya Ma'am?`;
             await sendMessage(sender, reply);
           } else if (pending && pending.action === 'awaiting_task_after_contact') {
-            const task = await addTask(pending.contactName, text, null, pending.contactPhone);
+            const negativeResponses = ['no', 'not now', 'nope', 'no thanks', 'later', 'skip', 'that\'s all', 'nothing'];
+            const normalized = text.trim().toLowerCase();
+            const isNegative = negativeResponses.includes(normalized);
 
-            delete pendingActions[sender];
+            if (isNegative) {
+              delete pendingActions[sender];
 
-            try {
-              const notifyMsg = `Hello ${pending.contactName}, this is JARVIS from school. Divya Ma'am has assigned you the following task: "${text}". Please ensure it is completed on time.`;
-              await sendMessage(pending.contactPhone, notifyMsg);
-            } catch (notifyErr) {
-              console.error('Failed to notify staff member:', notifyErr.message);
+              const reply = `No problem Divya Ma'am! ${pending.contactName} has been saved to your contacts. Feel free to assign tasks anytime!`;
+              await sendMessage(sender, reply);
+            } else {
+              const task = await addTask(pending.contactName, text, null, pending.contactPhone);
+
+              delete pendingActions[sender];
+
+              try {
+                const notifyMsg = `Hello ${pending.contactName}, this is JARVIS from school. Divya Ma'am has assigned you the following task: "${text}". Please ensure it is completed on time.`;
+                await sendMessage(pending.contactPhone, notifyMsg);
+              } catch (notifyErr) {
+                console.error('Failed to notify staff member:', notifyErr.message);
+              }
+
+              const reply = `Task assigned to ${pending.contactName}: "${text}" has been noted, and ${pending.contactName} has been notified. Is there anything else you'd like me to help with Divya Ma'am?`;
+              await sendMessage(sender, reply);
             }
-
-            const reply = `Task assigned to ${pending.contactName}: "${text}" has been noted, and ${pending.contactName} has been notified. Is there anything else you'd like me to help with Divya Ma'am?`;
-            await sendMessage(sender, reply);
           } else {
             let conversation = await Conversation.findOne({ senderPhone: sender });
             if (!conversation) {
