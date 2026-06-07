@@ -111,9 +111,9 @@ router.post('/', async (req, res) => {
               if (contacts.length === 0) {
                 await sendMessage(sender, 'You have no saved contacts yet Divya Ma\'am.');
               } else {
-                let reply = 'Here are your team members Divya Ma\'am:\n';
-                contacts.forEach((c, i) => {
-                  reply += `${i + 1}. ${c.name} - ${c.role} (${c.phone})\n`;
+                let reply = 'Your team Divya Ma\'am:\n';
+                contacts.forEach(c => {
+                  reply += `- ${c.name} - ${c.role}\n`;
                 });
                 await sendMessage(sender, reply.trim());
               }
@@ -124,17 +124,17 @@ router.post('/', async (req, res) => {
                 await sendMessage(sender, 'No pending tasks Divya Ma\'am. Everything is up to date!');
               } else {
                 const now = new Date();
-                let reply = 'Here are your pending tasks Divya Ma\'am:\n';
-                tasks.forEach((t, i) => {
+                let reply = 'Pending tasks:\n';
+                tasks.forEach(t => {
                   const due = t.dueDate ? new Date(t.dueDate) : null;
                   let suffix = '';
                   if (due && due < now) {
-                    suffix = ' (Overdue!)';
+                    suffix = ' (Overdue ⚠️)';
                   } else if (due) {
-                    const options = { weekday: 'long', month: 'short', day: 'numeric' };
-                    suffix = ` (Due: ${due.toLocaleDateString('en-IN', options)})`;
+                    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    suffix = ` (${days[due.getDay()]})`;
                   }
-                  reply += `${i + 1}. ${t.assignedTo} - ${t.taskDescription}${suffix}\n`;
+                  reply += `- ${t.assignedTo} - ${t.taskDescription}${suffix}\n`;
                 });
                 await sendMessage(sender, reply.trim());
               }
