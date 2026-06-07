@@ -8,6 +8,33 @@ const { Conversation } = require('../database/models');
 
 const pendingActions = {};
 
+function extractRole(text) {
+  let clean = text.toLowerCase().trim();
+
+  const prefixes = [
+    'he is ', 'she is ', 'he\'s ', 'she\'s ',
+    'he is a ', 'she is a ', 'he\'s a ', 'she\'s a ',
+    'he is an ', 'she is an ', 'he\'s an ', 'she\'s an ',
+    'he is the ', 'she is the ', 'he\'s the ', 'she\'s the ',
+    'his role is ', 'her role is ', 'i think ', 'maybe ', 'probably ',
+    'a ', 'an ', 'the ',
+  ];
+
+  for (const prefix of prefixes) {
+    if (clean.startsWith(prefix)) {
+      clean = clean.slice(prefix.length);
+      break;
+    }
+  }
+
+  clean = clean.replace(/[.!?]+$/, '').trim();
+
+  return clean
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -61,7 +88,7 @@ router.post('/', async (req, res) => {
           const pending = pendingActions[sender];
 
           if (pending && pending.action === 'awaiting_contact_role') {
-            const role = text.trim();
+            const role = extractRole(text);
             await saveContact(pending.contactName, role, pending.contactPhone);
 
             pendingActions[sender] = {
