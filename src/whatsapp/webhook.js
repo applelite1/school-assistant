@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { processMessage } = require('../ai/claude');
 const { sendMessage } = require('./sender');
-const { saveContact } = require('../contacts/contactManager');
-const { addTask } = require('../tasks/taskManager');
+const { saveContact, getAllContacts } = require('../contacts/contactManager');
+const { addTask, getPendingTasks } = require('../tasks/taskManager');
 const { Conversation } = require('../database/models');
 
 const pendingActions = {};
@@ -98,18 +98,60 @@ router.post('/', async (req, res) => {
               await sendMessage(sender, reply);
             }
           } else {
-            let conversation = await Conversation.findOne({ senderPhone: sender });
-            if (!conversation) {
-              conversation = await Conversation.create({ senderPhone: sender, history: [] });
+            const normalized = text.trim().toLowerCase();
+            const contactKeywords = ['team', 'contacts', 'members', 'staff', 'who', 'list contacts', 'show contacts'];
+            const taskKeywords = ['tasks', 'pending', 'follow up', 'what\'s pending', 'overdue'];
+
+            const isContactQuery = contactKeywords.some(k => normalized.includes(k));
+            const isTaskQuery = taskKeywords.some(k => normalized.includes(k));
+
+            if (isContactQuery) {
+              const contacts = await getAllContacts();
+
+              if (contacts.length === 0) {
+                await sendMessage(sender, 'You have no saved contacts yet Divya Ma\'am.');
+              } else {
+                let reply = 'Here are your team members Divya Ma\'am:\n';
+                contacts.forEach((c, i) => {
+                  reply += `${i + 1}. ${c.name} - ${c.role} (${c.phone})\n`;
+                });
+                await sendMessage(sender, reply.trim());
+              }
+            } else if (isTaskQuery) {
+              const tasks = await getPendingTasks();
+
+              if (tasks.length === 0) {
+                await sendMessage(sender, 'No pending tasks Divya Ma\'am. Everything is up to date!');
+              } else {
+                const now = new Date();
+                let reply = 'Here are your pending tasks Divya Ma\'am:\n';
+                tasks.forEach((t, i) => {
+                  const due = t.dueDate ? new Date(t.dueDate) : null;
+                  let suffix = '';
+                  if (due && due < now) {
+                    suffix = ' (Overdue!)';
+                  } else if (due) {
+                    const options = { weekday: 'long', month: 'short', day: 'numeric' };
+                    suffix = ` (Due: ${due.toLocaleDateString('en-IN', options)})`;
+                  }
+                  reply += `${i + 1}. ${t.assignedTo} - ${t.taskDescription}${suffix}\n`;
+                });
+                await sendMessage(sender, reply.trim());
+              }
+            } else {
+              let conversation = await Conversation.findOne({ senderPhone: sender });
+              if (!conversation) {
+                conversation = await Conversation.create({ senderPhone: sender, history: [] });
+              }
+
+              conversation.history.push({ role: 'user', content: text });
+              const reply = await processMessage(text, conversation.history);
+              conversation.history.push({ role: 'assistant', content: reply });
+              conversation.updatedAt = new Date();
+
+              await conversation.save();
+              await sendMessage(sender, reply);
             }
-
-            conversation.history.push({ role: 'user', content: text });
-            const reply = await processMessage(text, conversation.history);
-            conversation.history.push({ role: 'assistant', content: reply });
-            conversation.updatedAt = new Date();
-
-            await conversation.save();
-            await sendMessage(sender, reply);
           }
         }
       } catch (err) {
