@@ -19,4 +19,14 @@ async function deleteContact(name) {
   return await Contact.deleteOne({ name: regex });
 }
 
-module.exports = { saveContact, findContact, getAllContacts, deleteContact };
+async function updateContact(name, newRole) {
+  const regex = new RegExp(name, 'i');
+  const contact = await Contact.findOneAndUpdate(
+    { name: regex },
+    { role: newRole },
+    { new: true }
+  );
+  return contact;
+}
+
+module.exports = { saveContact, findContact, getAllContacts, deleteContact, updateContact };

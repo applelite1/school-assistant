@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { processMessage } = require('../ai/claude');
 const { sendMessage } = require('./sender');
-const { saveContact, getAllContacts } = require('../contacts/contactManager');
+const { saveContact, getAllContacts, deleteContact, updateContact } = require('../contacts/contactManager');
 const { addTask, getPendingTasks } = require('../tasks/taskManager');
 const { Conversation } = require('../database/models');
 
@@ -126,46 +126,97 @@ router.post('/', async (req, res) => {
             }
           } else {
             const normalized = text.trim().toLowerCase();
-            const contactKeywords = ['team', 'contacts', 'members', 'staff', 'who', 'list contacts', 'show contacts'];
-            const taskKeywords = ['tasks', 'pending', 'follow up', 'what\'s pending', 'overdue'];
+            const deleteKeywords = ['remove member', 'remove ', 'delete '];
+            const updateKeywords = ['change role', 'update role', ' is now '];
 
-            const isContactQuery = contactKeywords.some(k => normalized.includes(k));
-            const isTaskQuery = taskKeywords.some(k => normalized.includes(k));
+            const isDeleteCommand = deleteKeywords.some(k => normalized.includes(k));
+            const isUpdateCommand = updateKeywords.some(k => normalized.includes(k));
 
-            if (isContactQuery) {
-              const contacts = await getAllContacts();
-
-              if (contacts.length === 0) {
-                await sendMessage(sender, 'You have no saved contacts yet Divya Ma\'am.');
-              } else {
-                let reply = 'Your team Divya Ma\'am:\n';
-                contacts.forEach(c => {
-                  reply += `- ${c.name} - ${c.role}\n`;
-                });
-                await sendMessage(sender, reply.trim());
+            if (isDeleteCommand) {
+              let name = normalized;
+              if (name.includes('remove member')) {
+                name = name.slice(name.indexOf('remove member') + 'remove member'.length).trim();
+              } else if (name.includes('remove ')) {
+                name = name.slice(name.indexOf('remove ') + 'remove '.length).trim();
+              } else if (name.includes('delete ')) {
+                name = name.slice(name.indexOf('delete ') + 'delete '.length).trim();
               }
-            } else if (isTaskQuery) {
-              const tasks = await getPendingTasks();
+              name = name.replace(/^the /i, '').trim();
 
-              if (tasks.length === 0) {
-                await sendMessage(sender, 'No pending tasks Divya Ma\'am. Everything is up to date!');
+              name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+              console.log('Attempting to delete contact:', name);
+              const result = await deleteContact(name);
+              console.log('Delete result:', result);
+
+              const reply = result.deletedCount > 0
+                ? `Done! ${name} has been removed ✅`
+                : `I couldn't find ${name} in your team Divya Ma'am.`;
+              await sendMessage(sender, reply);
+            } else if (isUpdateCommand) {
+              let name, newRole;
+              if (normalized.includes(' is now ')) {
+                const parts = text.split(/\s+is now\s+/i);
+                name = parts[0].trim();
+                newRole = parts[1].trim();
               } else {
-                const now = new Date();
-                let reply = 'Pending tasks:\n';
-                tasks.forEach(t => {
-                  const due = t.dueDate ? new Date(t.dueDate) : null;
-                  let suffix = '';
-                  if (due && due < now) {
-                    suffix = ' (Overdue ⚠️)';
-                  } else if (due) {
-                    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                    suffix = ` (${days[due.getDay()]})`;
-                  }
-                  reply += `- ${t.assignedTo} - ${t.taskDescription}${suffix}\n`;
-                });
-                await sendMessage(sender, reply.trim());
+                const match = text.match(/(?:change|update)\s+role\s+of\s+(.+?)\s+to\s+(.+)/i);
+                if (match) {
+                  name = match[1].trim();
+                  newRole = match[2].trim();
+                }
+              }
+              if (name && newRole) {
+                const updated = await updateContact(name, newRole);
+                if (updated) {
+                  await sendMessage(sender, `Done! ${updated.name} is now ${updated.role} ✅`);
+                } else {
+                  await sendMessage(sender, `I couldn't find ${name} in your contacts Divya Ma'am.`);
+                }
+              } else {
+                await sendMessage(sender, "I couldn't understand the update. Try: '[name] is now [role]' Divya Ma'am.");
               }
             } else {
+              const contactKeywords = ['team', 'contacts', 'members', 'staff', 'who', 'list contacts', 'show contacts'];
+              const taskKeywords = ['tasks', 'pending', 'follow up', 'what\'s pending', 'overdue'];
+
+              const isContactQuery = contactKeywords.some(k => normalized.includes(k));
+              const isTaskQuery = taskKeywords.some(k => normalized.includes(k));
+
+              if (isContactQuery) {
+                const contacts = await getAllContacts();
+
+                if (contacts.length === 0) {
+                  await sendMessage(sender, 'You have no saved contacts yet Divya Ma\'am.');
+                } else {
+                  let reply = 'Your team Divya Ma\'am:\n';
+                  contacts.forEach(c => {
+                    reply += `- ${c.name} - ${c.role}\n`;
+                  });
+                  await sendMessage(sender, reply.trim());
+                }
+              } else if (isTaskQuery) {
+                const tasks = await getPendingTasks();
+
+                if (tasks.length === 0) {
+                  await sendMessage(sender, 'No pending tasks Divya Ma\'am. Everything is up to date!');
+                } else {
+                  const now = new Date();
+                  let reply = 'Pending tasks:\n';
+                  tasks.forEach(t => {
+                    const due = t.dueDate ? new Date(t.dueDate) : null;
+                    let suffix = '';
+                    if (due && due < now) {
+                      suffix = ' (Overdue ⚠️)';
+                    } else if (due) {
+                      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                      suffix = ` (${days[due.getDay()]})`;
+                    }
+                    reply += `- ${t.assignedTo} - ${t.taskDescription}${suffix}\n`;
+                  });
+                  await sendMessage(sender, reply.trim());
+                }
+              } else {
               let conversation = await Conversation.findOne({ senderPhone: sender });
               if (!conversation) {
                 conversation = await Conversation.create({ senderPhone: sender, history: [] });
@@ -181,6 +232,7 @@ router.post('/', async (req, res) => {
             }
           }
         }
+      }
       } catch (err) {
         console.error('Webhook handler error:', err);
         await sendMessage(sender, "I encountered an error processing your request. Please try again Divya Ma'am.");
